@@ -37,6 +37,7 @@ runout_length: 15.0
 # Set to 0 until ticks_per_mm is calibrated.
 clog_detection_length: 50.0
 clog_min_motion_ratio: 0.70
+flowrate_samples: 20
 
 pause_on_runout: True
 pause_on_clog: True
@@ -52,8 +53,25 @@ insert_gcode:
 - `runout_length`: positive commanded extrusion allowed without a sensor tick.
 - `clog_detection_length`: comparison-window length; `0` disables clog checks.
 - `clog_min_motion_ratio`: minimum sensed/commanded ratio before a clog fault.
-- `sample_time`: monitor interval, default `0.25` seconds.
+- `sample_time`: periodic monitor interval, default `0.25` seconds.
+- `flowrate_samples`: retained encoder/extruder movement pairs, default `20`, minimum `5`.
 - `reset_on_print_start`: reset diagnostics at print start, default `True`.
+
+`flow_rate` is an independent, Happy Hare-inspired rolling flow estimate. At
+periodic samples, a signed extruder position from Klipper's past-position
+history is paired with the absolute encoder travel only when the encoder has
+advanced. The ratio between the newest and oldest retained pair is smoothed
+with `(previous + new) / 2`; the exposed percentage is rounded and capped at
+100. It starts at 0 and ramps during initial movement. No encoder movement
+holds the last value; status queries do not sample or alter it. The estimate
+works with clog detection disabled and does not alter runout/clog decisions.
+
+Flow sample history and its smoothed value are rebased on Klipper ready,
+explicit `RESET_FILAMENT_MONITOR`, every new print transition, enable/disable,
+and a runtime `TICKS_PER_MM` calibration change. A fresh print therefore
+starts its flow ramp at 0. On print stop the last flow reading remains visible
+until the next print/rebase. Existing tick and extrusion/retraction counters
+retain their existing reset behavior.
 
 A one-wire encoder reports motion but not direction. `sensor_motion_length` is
 therefore absolute sensor motion. Positive commanded extrusion and retractions
@@ -78,7 +96,7 @@ extrusion.
 The object `filament_motion_monitor filament_sensor` exposes:
 
 - `commanded_extrusion_length`, `sensor_motion_length`, and `difference`
-- `motion_ratio`, `ticks`, and `calculated_ticks_per_mm`
+- `motion_ratio`, `flow_rate`, `flowrate_samples`, `flow_samples_count`, `ticks`, and `calculated_ticks_per_mm`
 - `runout_remaining`
 - clog window command/sensor/ratio values
 - `state`, `active_fault`, and `last_fault`

@@ -1,6 +1,6 @@
 # Fluidd dashboard component
 
-This directory contains a custom Fluidd `v1.37.6-fmm.1` build with a
+This directory contains a custom Fluidd `v1.37.6-fmm.2` build with a
 standalone **Filament Motion** dashboard card.
 
 The card:
@@ -8,14 +8,21 @@ The card:
 - automatically appears when Fluidd sees a `filament_motion_monitor ...`
   Klipper object;
 - shows a Happy Hare-inspired 300-degree flow gauge;
-- uses the clog comparison-window ratio while that window is active and the
-  overall sensed/commanded motion ratio otherwise;
-- marks the configured `clog_min_motion_ratio` threshold and the 100% target;
+- displays the backend `flow_rate` as its central percentage, showing an
+  unavailable mark for an older backend that lacks this field;
+- uses runout remaining distance as the 300-degree arc's headroom progress,
+  with configured runout length and zero endpoints in millimeters;
 - shows sensed versus commanded filament distance and runout margin;
 - enables or disables the monitor with `SET_FILAMENT_SENSOR`.
 
 The first monitor object is displayed. Sensor names are passed through Fluidd's
-G-code parameter encoder, so names containing spaces remain safe.
+G-code parameter encoder, so names containing spaces remain safe. The widget
+intentionally omits Happy Hare's automatic detection-length tuning, desired
+headroom, toolchange minimum-headroom tracking, mode label, and danger-zone
+markers: this monitor does not implement those capabilities. Runout distance
+is based only on this plugin's existing signed retract/unretract accounting.
+The central flow estimate is independent from the margin arc and from clog
+fault detection.
 
 ## Install
 

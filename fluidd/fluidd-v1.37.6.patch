@@ -2,30 +2,30 @@
 # Base commit: d894c50d580212c245a7c552ae695008c441683b
 
 diff --git a/package.json b/package.json
-index 909b4c2..907de3d 100644
+index 909b4c2..cbdcfaa 100644
 --- a/package.json
 +++ b/package.json
 @@ -1,6 +1,6 @@
  {
    "name": "fluidd",
 -  "version": "1.37.6",
-+  "version": "1.37.6-fmm.1",
++  "version": "1.37.6-fmm.2",
    "private": true,
    "type": "module",
    "description": "fluidd, a klipper web client.",
 diff --git a/src/components/widgets/filament-motion-monitor/FilamentMotionMeter.vue b/src/components/widgets/filament-motion-monitor/FilamentMotionMeter.vue
 new file mode 100644
-index 0000000..5547564
+index 0000000..526cb02
 --- /dev/null
 +++ b/src/components/widgets/filament-motion-monitor/FilamentMotionMeter.vue
-@@ -0,0 +1,168 @@
+@@ -0,0 +1,124 @@
 +<template>
 +  <svg
 +    viewBox="0 0 140 140"
 +    preserveAspectRatio="xMidYMid meet"
 +    :class="{ 'disabled-meter': !enabled }"
 +    role="img"
-+    :aria-label="`Filament flow ${displayPercent}%`"
++    :aria-label="ariaLabel"
 +  >
 +    <g transform="rotate(120 70 70)">
 +      <circle
@@ -42,7 +42,7 @@ index 0000000..5547564
 +        cx="70"
 +        cy="70"
 +        r="50"
-+        :class="meterClass"
++        class="primary-color meter-arc"
 +        fill="transparent"
 +        stroke-width="18"
 +        stroke-linecap="round"
@@ -50,25 +50,6 @@ index 0000000..5547564
 +        :stroke-dashoffset="dashOffset"
 +      />
 +    </g>
-+
-+    <line
-+      :x1="thresholdPoint.x"
-+      :y1="thresholdPoint.y"
-+      x2="70"
-+      y2="70"
-+      class="warning-color"
-+      stroke-width="3"
-+      stroke-dasharray="22,63"
-+    />
-+    <line
-+      :x1="targetPoint.x"
-+      :y1="targetPoint.y"
-+      x2="70"
-+      y2="70"
-+      class="target-color"
-+      stroke-width="3"
-+      stroke-dasharray="22,63"
-+    />
 +
 +    <text
 +      x="70"
@@ -83,83 +64,64 @@ index 0000000..5547564
 +      text-anchor="middle"
 +      class="value-text-color"
 +      font-size="20px"
-+    >{{ displayPercent }}%</text>
++    >{{ flowLabel }}</text>
 +    <text
 +      x="31"
 +      y="139"
 +      text-anchor="end"
 +      class="small-text-color"
 +      font-size="12px"
-+    >0</text>
++    >{{ endpointLabel(runoutLength) }}</text>
 +    <text
 +      x="107"
 +      y="139"
 +      class="small-text-color"
 +      font-size="12px"
-+    >{{ maxPercent }}</text>
++    >0 mm</text>
 +  </svg>
 +</template>
 +
 +<script lang="ts">
 +import { Component, Prop, Vue } from 'vue-property-decorator'
++import { formatFlowPercent, headroomProgress } from './filamentMotionMetrics'
 +
 +@Component({})
 +export default class FilamentMotionMeter extends Vue {
-+  @Prop({ type: Number, default: 0 })
-+  readonly ratio!: number
++  @Prop({ type: Number, default: null })
++  readonly flowRate!: number | null
 +
-+  @Prop({ type: Number, default: 0.7 })
-+  readonly minimumRatio!: number
++  @Prop({ type: Number, default: 0 })
++  readonly runoutLength!: number
++
++  @Prop({ type: Number, default: 0 })
++  readonly runoutRemaining!: number
 +
 +  @Prop({ type: Boolean, default: true })
 +  readonly enabled!: boolean
 +
-+  @Prop({ type: Boolean, default: false })
-+  readonly fault!: boolean
-+
-+  readonly maxPercent: number = 150
 +  readonly circumference: number = 2 * Math.PI * 50
 +  readonly dialArc: number = this.circumference * (60 / 360)
 +
-+  get percent (): number {
-+    return Math.max(0, this.ratio * 100)
++  get flowLabel (): string {
++    return formatFlowPercent(this.flowRate)
 +  }
 +
-+  get displayPercent (): number {
-+    return Math.round(this.percent)
++  get ariaLabel (): string {
++    return this.flowLabel === '—'
++      ? this.$t('app.filament_motion_monitor.label.flow_unavailable').toString()
++      : this.$t('app.filament_motion_monitor.label.flow_aria', {
++        percent: this.flowLabel
++      }).toString()
 +  }
 +
 +  get dashOffset (): number {
-+    const normalized = Math.min(this.percent, this.maxPercent) / this.maxPercent
++    const progress = headroomProgress(this.runoutLength, this.runoutRemaining)
 +
-+    return this.circumference * (1 - normalized * (300 / 360))
++    return this.circumference * (1 - progress * (300 / 360))
 +  }
 +
-+  get meterClass (): string {
-+    if (this.fault || (this.ratio > 0 && this.ratio < this.minimumRatio)) {
-+      return 'warning-color meter-arc'
-+    }
-+
-+    return 'primary-color meter-arc'
-+  }
-+
-+  get thresholdPoint (): { x: number; y: number } {
-+    return this.pointForPercent(this.minimumRatio * 100)
-+  }
-+
-+  get targetPoint (): { x: number; y: number } {
-+    return this.pointForPercent(100)
-+  }
-+
-+  pointForPercent (percent: number): { x: number; y: number } {
-+    const boundedPercent = Math.min(Math.max(percent, 0), this.maxPercent)
-+    const angle = 120 + (boundedPercent / this.maxPercent) * 300
-+    const radians = angle * Math.PI / 180
-+
-+    return {
-+      x: 70 + 66 * Math.cos(radians),
-+      y: 70 + 66 * Math.sin(radians)
-+    }
++  endpointLabel (value: number): string {
++    return Number.isFinite(value) && value > 0 ? `${value.toFixed(1)} mm` : '— mm'
 +  }
 +}
 +</script>
@@ -169,16 +131,10 @@ index 0000000..5547564
 +  opacity: 0.5;
 +}
 +.meter-arc {
-+  transition: stroke-dashoffset 0.35s ease-out, stroke 0.2s ease-out;
++  transition: stroke-dashoffset 0.35s ease-out;
 +}
 +.primary-color {
 +  stroke: var(--v-primary-lighten1, #2ca9bc);
-+}
-+.warning-color {
-+  stroke: var(--v-error-base, #ff0000);
-+}
-+.target-color {
-+  stroke: var(--v-success-base, #4caf50);
 +}
 +.small-text-color {
 +  fill: var(--v-primary-lighten1, #2ca9bc);
@@ -189,10 +145,10 @@ index 0000000..5547564
 +</style>
 diff --git a/src/components/widgets/filament-motion-monitor/FilamentMotionMonitorCard.vue b/src/components/widgets/filament-motion-monitor/FilamentMotionMonitorCard.vue
 new file mode 100644
-index 0000000..1843b16
+index 0000000..e82aabf
 --- /dev/null
 +++ b/src/components/widgets/filament-motion-monitor/FilamentMotionMonitorCard.vue
-@@ -0,0 +1,176 @@
+@@ -0,0 +1,169 @@
 +<template>
 +  <collapsable-card
 +    :title="$t('app.filament_motion_monitor.title')"
@@ -228,10 +184,10 @@ index 0000000..1843b16
 +      <div class="d-flex flex-column align-center">
 +        <filament-motion-meter
 +          class="motion-meter"
-+          :ratio="flowRatio"
-+          :minimum-ratio="sensor.clog_min_motion_ratio"
++          :flow-rate="flowRate"
++          :runout-length="sensor.runout_length"
++          :runout-remaining="sensor.runout_remaining"
 +          :enabled="sensor.enabled"
-+          :fault="hasFault"
 +        />
 +
 +        <div
@@ -246,10 +202,7 @@ index 0000000..1843b16
 +            commanded: formatLength(sensor.commanded_extrusion_length)
 +          }) }}
 +        </div>
-+        <div
-+          v-if="sensor.enabled"
-+          class="text-caption text--secondary text-center"
-+        >
++        <div class="text-caption text--secondary text-center">
 +          {{ $t('app.filament_motion_monitor.label.runout_remaining', {
 +            distance: formatLength(sensor.runout_remaining)
 +          }) }}
@@ -276,13 +229,11 @@ index 0000000..1843b16
 +  enabled: boolean
 +  state: string
 +  active_fault: string | null
-+  motion_ratio: number
-+  clog_window_ratio: number
-+  clog_window_commanded: number
-+  clog_min_motion_ratio: number
-+  sensor_motion_length: number
-+  commanded_extrusion_length: number
-+  runout_remaining: number
++  flow_rate?: number
++  sensor_motion_length?: number
++  commanded_extrusion_length?: number
++  runout_length?: number
++  runout_remaining?: number
 +}
 +
 +interface FilamentMotionMonitorEntry {
@@ -318,12 +269,10 @@ index 0000000..1843b16
 +    return this.monitor?.status ?? null
 +  }
 +
-+  get flowRatio (): number {
-+    if (!this.sensor) return 0
++  get flowRate (): number | null {
++    const value = this.sensor?.flow_rate
 +
-+    return this.sensor.clog_window_commanded > 0
-+      ? this.sensor.clog_window_ratio
-+      : this.sensor.motion_ratio
++    return typeof value === 'number' && Number.isFinite(value) ? value : null
 +  }
 +
 +  get hasFault (): boolean {
@@ -358,8 +307,8 @@ index 0000000..1843b16
 +    )
 +  }
 +
-+  formatLength (value: number): string {
-+    return Number.isFinite(value) ? value.toFixed(1) : '0.0'
++  formatLength (value: number | undefined): string {
++    return typeof value === 'number' && Number.isFinite(value) ? value.toFixed(1) : '—'
 +  }
 +}
 +</script>
@@ -369,11 +318,69 @@ index 0000000..1843b16
 +  width: min(230px, 70%);
 +}
 +</style>
+diff --git a/src/components/widgets/filament-motion-monitor/__tests__/filamentMotionMetrics.spec.ts b/src/components/widgets/filament-motion-monitor/__tests__/filamentMotionMetrics.spec.ts
+new file mode 100644
+index 0000000..ac49e07
+--- /dev/null
++++ b/src/components/widgets/filament-motion-monitor/__tests__/filamentMotionMetrics.spec.ts
+@@ -0,0 +1,29 @@
++import { describe, expect, it } from 'vitest'
++import { formatFlowPercent, headroomProgress } from '../filamentMotionMetrics'
++
++describe('filament motion meter metrics', () => {
++  it('shows flow unavailable when the backend field is missing or invalid', () => {
++    expect(formatFlowPercent(undefined)).toBe('—')
++    expect(formatFlowPercent(Number.NaN)).toBe('—')
++    expect(formatFlowPercent(Number.POSITIVE_INFINITY)).toBe('—')
++  })
++
++  it('formats backend flow percentage without consulting motion ratios', () => {
++    expect(formatFlowPercent(0)).toBe('0%')
++    expect(formatFlowPercent(73.6)).toBe('74%')
++    expect(formatFlowPercent(140)).toBe('100%')
++  })
++
++  it('maps runout headroom to the independent 300 degree arc progress', () => {
++    expect(headroomProgress(15, 15)).toBe(0)
++    expect(headroomProgress(15, 7.5)).toBe(0.5)
++    expect(headroomProgress(15, 0)).toBe(1)
++  })
++
++  it('clamps excessive or invalid runout values safely', () => {
++    expect(headroomProgress(15, 30)).toBe(0)
++    expect(headroomProgress(15, -5)).toBe(1)
++    expect(headroomProgress(0, 0)).toBe(0)
++    expect(headroomProgress(15, undefined)).toBe(0)
++  })
++})
+diff --git a/src/components/widgets/filament-motion-monitor/filamentMotionMetrics.ts b/src/components/widgets/filament-motion-monitor/filamentMotionMetrics.ts
+new file mode 100644
+index 0000000..1c56681
+--- /dev/null
++++ b/src/components/widgets/filament-motion-monitor/filamentMotionMetrics.ts
+@@ -0,0 +1,17 @@
++export const formatFlowPercent = (flowRate: unknown): string => {
++  if (typeof flowRate !== 'number' || !Number.isFinite(flowRate)) return '—'
++
++  return `${Math.max(0, Math.min(100, Math.round(flowRate)))}%`
++}
++
++export const headroomProgress = (runoutLength: unknown, runoutRemaining: unknown): number => {
++  if (
++    typeof runoutLength !== 'number' ||
++    !Number.isFinite(runoutLength) ||
++    runoutLength <= 0 ||
++    typeof runoutRemaining !== 'number' ||
++    !Number.isFinite(runoutRemaining)
++  ) return 0
++
++  return Math.max(0, Math.min(1, (runoutLength - runoutRemaining) / runoutLength))
++}
 diff --git a/src/locales/en.yaml b/src/locales/en.yaml
-index 7a656e5..6b5335d 100644
+index 7a656e5..64eea2e 100644
 --- a/src/locales/en.yaml
 +++ b/src/locales/en.yaml
-@@ -253,6 +253,22 @@ app:
+@@ -253,6 +253,24 @@ app:
        moonraker_config: 'https://moonraker.readthedocs.io/en/latest/configuration/#%{hash}'
        moonraker_telegram_bot_config: 'https://github.com/nlef/moonraker-telegram-bot/wiki/Sample-config#%{hash}'
        crowsnest_config: 'https://crowsnest.mainsail.xyz/configuration/%{hash}-section'
@@ -383,6 +390,8 @@ index 7a656e5..6b5335d 100644
 +      disabled: Disabled
 +      enabled: Enabled
 +      flow: Flow
++      flow_aria: 'Filament flow rate %{percent}'
++      flow_unavailable: Filament flow rate unavailable
 +      not_available: No filament motion monitor detected
 +      runout_remaining: 'Runout margin: %{distance} mm'
 +      sensed_commanded: 'Sensed %{sensed} mm / Commanded %{commanded} mm'

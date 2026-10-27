@@ -28,6 +28,8 @@ class FilamentMotionMonitor:
             "clog_min_motion_ratio", 0.70, minval=0.0, maxval=1.0)
         self.sample_time = config.getfloat(
             "sample_time", DEFAULT_SAMPLE_TIME, above=0.0)
+        self.flowrate_samples = config.getint(
+            "flowrate_samples", 20, minval=5)
         self.reset_on_print_start = config.getboolean(
             "reset_on_print_start", True)
 
@@ -75,6 +77,9 @@ class FilamentMotionMonitor:
         self.clog_window_commanded = 0.0
         self.clog_window_sensor = 0.0
         self.clog_window_ratio = 1.0
+        self.flow_samples = []
+        self.flow_last_encoder_position = self._sensor_length()
+        self.smoothed_flow_ratio = 0.0
 
         self.printer.register_event_handler("klippy:ready", self._handle_ready)
         self.printer.register_event_handler(
@@ -121,12 +126,14 @@ class FilamentMotionMonitor:
         print_time = self.estimated_print_time(eventtime)
         return self.extruder.find_past_position(print_time)
 
-    def _sample_extruder(self, eventtime):
+    def _sample_extruder(self, eventtime, update_flow=False):
         if self.extruder is None:
             return
         position = self._get_extruder_position(eventtime)
         if self.last_extruder_position is None:
             self.last_extruder_position = position
+            if update_flow:
+                self._record_flow_sample(position)
             return
         delta = position - self.last_extruder_position
         self.last_extruder_position = position
@@ -142,6 +149,27 @@ class FilamentMotionMonitor:
             # net travel so a retract followed by an unretract does not count
             # as new forward travel beyond the last encoder tick.
             self.forward_since_tick -= distance
+        if update_flow:
+            self._record_flow_sample(position)
+
+    def _reset_flow_telemetry(self, eventtime=None):
+        self.flow_samples = []
+        self.smoothed_flow_ratio = 0.0
+        self.flow_last_encoder_position = self._sensor_length()
+
+    def _record_flow_sample(self, extruder_position):
+        encoder_position = self._sensor_length()
+        if encoder_position <= self.flow_last_encoder_position:
+            return
+        self.flow_last_encoder_position = encoder_position
+        self.flow_samples.append((encoder_position, extruder_position))
+        self.flow_samples = self.flow_samples[-self.flowrate_samples:]
+        encoder_delta = self.flow_samples[-1][0] - self.flow_samples[0][0]
+        extruder_delta = self.flow_samples[-1][1] - self.flow_samples[0][1]
+        new_ratio = encoder_delta / extruder_delta if extruder_delta > 0.0 else 1.0
+        if not (new_ratio >= 0.0 and new_ratio < float("inf")):
+            new_ratio = 1.0
+        self.smoothed_flow_ratio = (self.smoothed_flow_ratio + new_ratio) / 2.0
 
     def _reset_monitoring_baselines(self):
         self.forward_since_tick = 0.0
@@ -150,6 +178,7 @@ class FilamentMotionMonitor:
         self.clog_window_commanded = 0.0
         self.clog_window_sensor = 0.0
         self.clog_window_ratio = 1.0
+        self._reset_flow_telemetry()
 
     def _reset_counters(self, eventtime):
         if self.extruder is not None:
@@ -164,6 +193,7 @@ class FilamentMotionMonitor:
         self.active_fault = ""
         self.filament_present = True
         self._reset_monitoring_baselines()
+        self._reset_flow_telemetry(eventtime)
 
     def _handle_ready(self):
         self.extruder = self.printer.lookup_object(self.extruder_name)
@@ -184,6 +214,8 @@ class FilamentMotionMonitor:
         else:
             self.last_extruder_position = self._get_extruder_position(now)
             self._reset_monitoring_baselines()
+        if not was_printing:
+            self._reset_flow_telemetry(now)
         self.reactor.update_timer(self.sample_timer, self.reactor.NOW)
 
     def _handle_not_printing(self, print_time):
@@ -195,7 +227,7 @@ class FilamentMotionMonitor:
             self.reactor.update_timer(self.sample_timer, self.reactor.NEVER)
 
     def _sample_event(self, eventtime):
-        self._sample_extruder(eventtime)
+        self._sample_extruder(eventtime, update_flow=True)
         if self.sensor_enabled and self.is_printing and not self.active_fault:
             if self.forward_since_tick >= self.runout_length:
                 self._trigger_fault(eventtime, "runout")
@@ -328,6 +360,9 @@ class FilamentMotionMonitor:
             "commanded_motion_length": self.commanded_motion_length,
             "difference": difference,
             "motion_ratio": ratio,
+            "flow_rate": self._flow_rate_percent(),
+            "flowrate_samples": self.flowrate_samples,
+            "flow_samples_count": len(self.flow_samples),
             "calculated_ticks_per_mm": calibrated_ticks,
             "runout_length": self.runout_length,
             "distance_since_tick": max(0.0, self.forward_since_tick),
@@ -346,17 +381,25 @@ class FilamentMotionMonitor:
             "seconds_since_fault": seconds_since_fault,
         }
 
+    def _flow_rate_percent(self):
+        ratio = self.smoothed_flow_ratio
+        if not (ratio >= 0.0 and ratio < float("inf")):
+            return 0
+        return max(0, min(100, int(round(ratio * 100.0))))
+
     def _respond_status(self, gcmd):
         status = self.get_status(self.reactor.monotonic())
         gcmd.respond_info(
-            ("Filament monitor %s: state=%s enabled=%s ticks=%d\n"
+            ("Filament monitor %s: state=%s enabled=%s ticks=%d flow=%d%%\n"
              "commanded=%.3fmm sensed=%.3fmm diff=%.3fmm ratio=%.3f\n"
-             "runout_remaining=%.3fmm last_fault=%s\n"
+             "flow_samples=%d/%d runout_remaining=%.3fmm last_fault=%s\n"
              "calculated_ticks_per_mm=%.6f")
             % (self.name, status["state"], status["enabled"],
-               status["ticks"], status["commanded_extrusion_length"],
+               status["ticks"], status["flow_rate"],
+               status["commanded_extrusion_length"],
                status["sensor_motion_length"], status["difference"],
-               status["motion_ratio"], status["runout_remaining"],
+               status["motion_ratio"], status["flow_samples_count"],
+               status["flowrate_samples"], status["runout_remaining"],
                status["last_fault"] or "none",
                status["calculated_ticks_per_mm"]), log=False)
 
@@ -382,15 +425,19 @@ class FilamentMotionMonitor:
         if ticks_per_mm is not None:
             self.ticks_per_mm = ticks_per_mm
             self._reset_monitoring_baselines()
+            self._reset_flow_telemetry(self.reactor.monotonic())
         self._respond_status(gcmd)
 
     def _set_enabled(self, enable):
-        if enable and not self.sensor_enabled:
-            self._reset_monitoring_baselines()
-            self.active_fault = ""
-            self.filament_present = True
-            self.min_event_systime = self.reactor.monotonic() + self.event_delay
-        self.sensor_enabled = enable
+        if enable != self.sensor_enabled:
+            now = self.reactor.monotonic()
+            if enable:
+                self._reset_monitoring_baselines()
+                self.active_fault = ""
+                self.filament_present = True
+                self.min_event_systime = now + self.event_delay
+            self.sensor_enabled = enable
+            self._reset_flow_telemetry(now)
 
     cmd_RESET_FILAMENT_MONITOR_help = "Reset counters and latched faults"
     def cmd_RESET_FILAMENT_MONITOR(self, gcmd):
