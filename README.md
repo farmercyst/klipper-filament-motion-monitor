@@ -96,6 +96,33 @@ SET_FILAMENT_MONITOR SENSOR=filament_sensor TICKS_PER_MM=0.35
 
 Runtime settings are not persisted; edit the config after calibration.
 
+## Fluidd dashboard card
+
+A compiled Fluidd `v1.37.6-fmm.1` build is included with a standalone,
+Happy Hare-inspired **Filament Motion** flow gauge and an enable/disable toggle.
+It automatically detects the first `filament_motion_monitor ...` object and
+issues `SET_FILAMENT_SENSOR` for that sensor.
+
+Install it with:
+
+```bash
+cd ~/klipper-filament-motion-monitor
+./scripts/install-fluidd-ui.sh --restart
+```
+
+The installer backs up the stock `~/fluidd`, serves the repository-managed
+build through a symlink, and disables the stock Fluidd web updater so an
+official update cannot overwrite the custom component. Hard-refresh the browser
+after installation because Fluidd's service worker caches compiled assets.
+
+To return to stock Fluidd:
+
+```bash
+./scripts/uninstall-fluidd-ui.sh --restart
+```
+
+See [`fluidd/README.md`](fluidd/README.md) for build and upstream-update details.
+
 ## Moonraker update manager
 
 After pushing this repository to GitHub, add:

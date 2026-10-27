@@ -1,0 +1,452 @@
+# Fluidd v1.37.6 filament motion monitor UI patch
+# Base commit: d894c50d580212c245a7c552ae695008c441683b
+
+diff --git a/package.json b/package.json
+index 909b4c2..907de3d 100644
+--- a/package.json
++++ b/package.json
+@@ -1,6 +1,6 @@
+ {
+   "name": "fluidd",
+-  "version": "1.37.6",
++  "version": "1.37.6-fmm.1",
+   "private": true,
+   "type": "module",
+   "description": "fluidd, a klipper web client.",
+diff --git a/src/components/widgets/filament-motion-monitor/FilamentMotionMeter.vue b/src/components/widgets/filament-motion-monitor/FilamentMotionMeter.vue
+new file mode 100644
+index 0000000..5547564
+--- /dev/null
++++ b/src/components/widgets/filament-motion-monitor/FilamentMotionMeter.vue
+@@ -0,0 +1,168 @@
++<template>
++  <svg
++    viewBox="0 0 140 140"
++    preserveAspectRatio="xMidYMid meet"
++    :class="{ 'disabled-meter': !enabled }"
++    role="img"
++    :aria-label="`Filament flow ${displayPercent}%`"
++  >
++    <g transform="rotate(120 70 70)">
++      <circle
++        cx="70"
++        cy="70"
++        r="50"
++        class="v-progress-circular__underlay"
++        fill="transparent"
++        stroke-width="18"
++        :stroke-dasharray="circumference"
++        :stroke-dashoffset="dialArc"
++      />
++      <circle
++        cx="70"
++        cy="70"
++        r="50"
++        :class="meterClass"
++        fill="transparent"
++        stroke-width="18"
++        stroke-linecap="round"
++        :stroke-dasharray="circumference"
++        :stroke-dashoffset="dashOffset"
++      />
++    </g>
++
++    <line
++      :x1="thresholdPoint.x"
++      :y1="thresholdPoint.y"
++      x2="70"
++      y2="70"
++      class="warning-color"
++      stroke-width="3"
++      stroke-dasharray="22,63"
++    />
++    <line
++      :x1="targetPoint.x"
++      :y1="targetPoint.y"
++      x2="70"
++      y2="70"
++      class="target-color"
++      stroke-width="3"
++      stroke-dasharray="22,63"
++    />
++
++    <text
++      x="70"
++      y="56"
++      text-anchor="middle"
++      class="small-text-color"
++      font-size="11px"
++    >{{ $t('app.filament_motion_monitor.label.flow') }}</text>
++    <text
++      x="70"
++      y="81"
++      text-anchor="middle"
++      class="value-text-color"
++      font-size="20px"
++    >{{ displayPercent }}%</text>
++    <text
++      x="31"
++      y="139"
++      text-anchor="end"
++      class="small-text-color"
++      font-size="12px"
++    >0</text>
++    <text
++      x="107"
++      y="139"
++      class="small-text-color"
++      font-size="12px"
++    >{{ maxPercent }}</text>
++  </svg>
++</template>
++
++<script lang="ts">
++import { Component, Prop, Vue } from 'vue-property-decorator'
++
++@Component({})
++export default class FilamentMotionMeter extends Vue {
++  @Prop({ type: Number, default: 0 })
++  readonly ratio!: number
++
++  @Prop({ type: Number, default: 0.7 })
++  readonly minimumRatio!: number
++
++  @Prop({ type: Boolean, default: true })
++  readonly enabled!: boolean
++
++  @Prop({ type: Boolean, default: false })
++  readonly fault!: boolean
++
++  readonly maxPercent: number = 150
++  readonly circumference: number = 2 * Math.PI * 50
++  readonly dialArc: number = this.circumference * (60 / 360)
++
++  get percent (): number {
++    return Math.max(0, this.ratio * 100)
++  }
++
++  get displayPercent (): number {
++    return Math.round(this.percent)
++  }
++
++  get dashOffset (): number {
++    const normalized = Math.min(this.percent, this.maxPercent) / this.maxPercent
++
++    return this.circumference * (1 - normalized * (300 / 360))
++  }
++
++  get meterClass (): string {
++    if (this.fault || (this.ratio > 0 && this.ratio < this.minimumRatio)) {
++      return 'warning-color meter-arc'
++    }
++
++    return 'primary-color meter-arc'
++  }
++
++  get thresholdPoint (): { x: number; y: number } {
++    return this.pointForPercent(this.minimumRatio * 100)
++  }
++
++  get targetPoint (): { x: number; y: number } {
++    return this.pointForPercent(100)
++  }
++
++  pointForPercent (percent: number): { x: number; y: number } {
++    const boundedPercent = Math.min(Math.max(percent, 0), this.maxPercent)
++    const angle = 120 + (boundedPercent / this.maxPercent) * 300
++    const radians = angle * Math.PI / 180
++
++    return {
++      x: 70 + 66 * Math.cos(radians),
++      y: 70 + 66 * Math.sin(radians)
++    }
++  }
++}
++</script>
++
++<style scoped>
++.disabled-meter {
++  opacity: 0.5;
++}
++.meter-arc {
++  transition: stroke-dashoffset 0.35s ease-out, stroke 0.2s ease-out;
++}
++.primary-color {
++  stroke: var(--v-primary-lighten1, #2ca9bc);
++}
++.warning-color {
++  stroke: var(--v-error-base, #ff0000);
++}
++.target-color {
++  stroke: var(--v-success-base, #4caf50);
++}
++.small-text-color {
++  fill: var(--v-primary-lighten1, #2ca9bc);
++}
++.value-text-color {
++  fill: currentColor;
++}
++</style>
+diff --git a/src/components/widgets/filament-motion-monitor/FilamentMotionMonitorCard.vue b/src/components/widgets/filament-motion-monitor/FilamentMotionMonitorCard.vue
+new file mode 100644
+index 0000000..1843b16
+--- /dev/null
++++ b/src/components/widgets/filament-motion-monitor/FilamentMotionMonitorCard.vue
+@@ -0,0 +1,176 @@
++<template>
++  <collapsable-card
++    :title="$t('app.filament_motion_monitor.title')"
++    icon="$printer3dNozzleAlert"
++    layout-path="dashboard.filament-motion-monitor-card"
++  >
++    <template #menu>
++      <div
++        v-if="sensor"
++        class="d-flex align-center"
++        @click.stop
++      >
++        <span class="text-caption text--secondary mr-2">
++          {{ sensor.enabled
++            ? $t('app.filament_motion_monitor.label.enabled')
++            : $t('app.filament_motion_monitor.label.disabled') }}
++        </span>
++        <v-switch
++          :input-value="sensor.enabled"
++          :disabled="!klippyReady"
++          dense
++          hide-details
++          class="ma-0 pa-0"
++          @change="changeSensor"
++        />
++      </div>
++    </template>
++
++    <div
++      v-if="sensor"
++      class="pa-3"
++    >
++      <div class="d-flex flex-column align-center">
++        <filament-motion-meter
++          class="motion-meter"
++          :ratio="flowRatio"
++          :minimum-ratio="sensor.clog_min_motion_ratio"
++          :enabled="sensor.enabled"
++          :fault="hasFault"
++        />
++
++        <div
++          class="text-body-2 font-weight-medium mt-n2"
++          :class="statusClass"
++        >
++          {{ statusText }}
++        </div>
++        <div class="text-caption text--secondary text-center mt-1">
++          {{ $t('app.filament_motion_monitor.label.sensed_commanded', {
++            sensed: formatLength(sensor.sensor_motion_length),
++            commanded: formatLength(sensor.commanded_extrusion_length)
++          }) }}
++        </div>
++        <div
++          v-if="sensor.enabled"
++          class="text-caption text--secondary text-center"
++        >
++          {{ $t('app.filament_motion_monitor.label.runout_remaining', {
++            distance: formatLength(sensor.runout_remaining)
++          }) }}
++        </div>
++      </div>
++    </div>
++
++    <div
++      v-else
++      class="pa-4 text--secondary text-center"
++    >
++      {{ $t('app.filament_motion_monitor.label.not_available') }}
++    </div>
++  </collapsable-card>
++</template>
++
++<script lang="ts">
++import { Component, Mixins } from 'vue-property-decorator'
++import StateMixin from '@/mixins/state'
++import FilamentMotionMeter from './FilamentMotionMeter.vue'
++import { encodeGcodeParamValue } from '@/util/gcode-helpers'
++
++interface FilamentMotionMonitorStatus {
++  enabled: boolean
++  state: string
++  active_fault: string | null
++  motion_ratio: number
++  clog_window_ratio: number
++  clog_window_commanded: number
++  clog_min_motion_ratio: number
++  sensor_motion_length: number
++  commanded_extrusion_length: number
++  runout_remaining: number
++}
++
++interface FilamentMotionMonitorEntry {
++  name: string
++  status: FilamentMotionMonitorStatus
++}
++
++@Component({
++  components: {
++    FilamentMotionMeter
++  }
++})
++export default class FilamentMotionMonitorCard extends Mixins(StateMixin) {
++  readonly objectPrefix = 'filament_motion_monitor '
++
++  get monitor (): FilamentMotionMonitorEntry | null {
++    const printer = this.$typedState.printer.printer
++    const key = Object.keys(printer).find(key => key.startsWith(this.objectPrefix))
++
++    if (!key) return null
++
++    const status = printer[key] as unknown as FilamentMotionMonitorStatus | undefined
++
++    if (!status) return null
++
++    return {
++      name: key.slice(this.objectPrefix.length),
++      status
++    }
++  }
++
++  get sensor (): FilamentMotionMonitorStatus | null {
++    return this.monitor?.status ?? null
++  }
++
++  get flowRatio (): number {
++    if (!this.sensor) return 0
++
++    return this.sensor.clog_window_commanded > 0
++      ? this.sensor.clog_window_ratio
++      : this.sensor.motion_ratio
++  }
++
++  get hasFault (): boolean {
++    return Boolean(this.sensor?.active_fault)
++  }
++
++  get statusText (): string {
++    if (!this.sensor) return ''
++
++    const stateKey = ['disabled', 'idle', 'monitoring', 'runout', 'clog'].includes(this.sensor.state)
++      ? this.sensor.state
++      : 'unknown'
++
++    return this.$tc(`app.filament_motion_monitor.state.${stateKey}`)
++  }
++
++  get statusClass (): string {
++    if (this.hasFault) return 'error--text'
++    if (!this.sensor?.enabled) return 'text--disabled'
++    if (this.sensor.state === 'monitoring') return 'success--text'
++
++    return 'text--secondary'
++  }
++
++  changeSensor (value: boolean) {
++    const name = this.monitor?.name
++
++    if (!name) return
++
++    this.sendGcode(
++      `SET_FILAMENT_SENSOR SENSOR=${encodeGcodeParamValue(name)} ENABLE=${+value}`
++    )
++  }
++
++  formatLength (value: number): string {
++    return Number.isFinite(value) ? value.toFixed(1) : '0.0'
++  }
++}
++</script>
++
++<style scoped>
++.motion-meter {
++  width: min(230px, 70%);
++}
++</style>
+diff --git a/src/locales/en.yaml b/src/locales/en.yaml
+index 7a656e5..6b5335d 100644
+--- a/src/locales/en.yaml
++++ b/src/locales/en.yaml
+@@ -253,6 +253,22 @@ app:
+       moonraker_config: 'https://moonraker.readthedocs.io/en/latest/configuration/#%{hash}'
+       moonraker_telegram_bot_config: 'https://github.com/nlef/moonraker-telegram-bot/wiki/Sample-config#%{hash}'
+       crowsnest_config: 'https://crowsnest.mainsail.xyz/configuration/%{hash}-section'
++  filament_motion_monitor:
++    title: Filament Motion
++    label:
++      disabled: Disabled
++      enabled: Enabled
++      flow: Flow
++      not_available: No filament motion monitor detected
++      runout_remaining: 'Runout margin: %{distance} mm'
++      sensed_commanded: 'Sensed %{sensed} mm / Commanded %{commanded} mm'
++    state:
++      clog: Clog or slip detected
++      disabled: Monitoring disabled
++      idle: Ready
++      monitoring: Monitoring filament motion
++      runout: Filament runout detected
++      unknown: Unknown
+   gcode:
+     btn:
+       load_current_file: Load Current File
+diff --git a/src/store/layout/state.ts b/src/store/layout/state.ts
+index 36e57ac..8a2ee64 100644
+--- a/src/store/layout/state.ts
++++ b/src/store/layout/state.ts
+@@ -57,6 +57,7 @@ export const createState = (): LayoutState => {
+           { id: 'printer-status-card', enabled: true, collapsed: false },
+           { id: 'spoolman-card', enabled: true, collapsed: false },
+           { id: 'mmu-card', enabled: true, collapsed: false },
++          { id: 'filament-motion-monitor-card', enabled: true, collapsed: false },
+           { id: 'camera-card', enabled: true, collapsed: false },
+           { id: 'toolhead-card', enabled: true, collapsed: false },
+           { id: 'macros-card', enabled: true, collapsed: false },
+diff --git a/src/views/Dashboard.vue b/src/views/Dashboard.vue
+index a01c43f..3ca71ca 100644
+--- a/src/views/Dashboard.vue
++++ b/src/views/Dashboard.vue
+@@ -55,6 +55,7 @@ import SensorsCard from '@/components/widgets/sensors/SensorsCard.vue'
+ import RunoutSensorsCard from '@/components/widgets/runout-sensors/RunoutSensorsCard.vue'
+ import BeaconCard from '@/components/widgets/beacon/BeaconCard.vue'
+ import AfcCard from '@/components/widgets/afc/AfcCard.vue'
++import FilamentMotionMonitorCard from '@/components/widgets/filament-motion-monitor/FilamentMotionMonitorCard.vue'
+ import type Sortable from 'sortablejs'
+ 
+ @Component({
+@@ -77,7 +78,8 @@ import type Sortable from 'sortablejs'
+     SensorsCard,
+     RunoutSensorsCard,
+     BeaconCard,
+-    AfcCard
++    AfcCard,
++    FilamentMotionMonitorCard
+   }
+ })
+ export default class Dashboard extends Mixins(StateMixin) {
+@@ -154,6 +156,11 @@ export default class Dashboard extends Mixins(StateMixin) {
+     return this.$typedGetters['printer/getSupportsAfc']
+   }
+ 
++  get supportsFilamentMotionMonitor (): boolean {
++    return Object.keys(this.$typedState.printer.printer)
++      .some(key => key.startsWith('filament_motion_monitor '))
++  }
++
+   get hasMacros (): boolean {
+     return this.$typedGetters['macros/getVisibleMacros'].length > 0
+   }
+@@ -237,6 +244,7 @@ export default class Dashboard extends Mixins(StateMixin) {
+     if (item.id === 'sensors-card' && !this.hasSensors) return true
+     if (item.id === 'temperature-card' && !this.hasHeatersOrTemperatureSensors) return true
+     if (item.id === 'afc-card' && !this.supportsAfc) return true
++    if (item.id === 'filament-motion-monitor-card' && !this.supportsFilamentMotionMonitor) return true
+ 
+     // Otherwise return the opposite of whatever the enabled state is.
+     return !item.enabled
