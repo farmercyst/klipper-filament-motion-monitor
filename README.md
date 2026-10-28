@@ -116,7 +116,7 @@ Runtime settings are not persisted; edit the config after calibration.
 
 ## Fluidd dashboard card
 
-A compiled Fluidd `v1.37.6-fmm.1` build is included with a standalone,
+A compiled Fluidd `v1.37.6-fmm.3` build is included with a standalone,
 Happy Hare-inspired **Filament Motion** flow gauge and an enable/disable toggle.
 It automatically detects the first `filament_motion_monitor ...` object and
 issues `SET_FILAMENT_SENSOR` for that sensor.

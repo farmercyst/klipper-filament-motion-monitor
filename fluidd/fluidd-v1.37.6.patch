@@ -2,14 +2,14 @@
 # Base commit: d894c50d580212c245a7c552ae695008c441683b
 
 diff --git a/package.json b/package.json
-index 909b4c2..cbdcfaa 100644
+index 909b4c2..93eeec9 100644
 --- a/package.json
 +++ b/package.json
 @@ -1,6 +1,6 @@
  {
    "name": "fluidd",
 -  "version": "1.37.6",
-+  "version": "1.37.6-fmm.2",
++  "version": "1.37.6-fmm.3",
    "private": true,
    "type": "module",
    "description": "fluidd, a klipper web client.",
@@ -145,14 +145,15 @@ index 0000000..526cb02
 +</style>
 diff --git a/src/components/widgets/filament-motion-monitor/FilamentMotionMonitorCard.vue b/src/components/widgets/filament-motion-monitor/FilamentMotionMonitorCard.vue
 new file mode 100644
-index 0000000..e82aabf
+index 0000000..32ca7b5
 --- /dev/null
 +++ b/src/components/widgets/filament-motion-monitor/FilamentMotionMonitorCard.vue
-@@ -0,0 +1,169 @@
+@@ -0,0 +1,162 @@
 +<template>
 +  <collapsable-card
 +    :title="$t('app.filament_motion_monitor.title')"
 +    icon="$printer3dNozzleAlert"
++    draggable
 +    layout-path="dashboard.filament-motion-monitor-card"
 +  >
 +    <template #menu>
@@ -191,16 +192,10 @@ index 0000000..e82aabf
 +        />
 +
 +        <div
-+          class="text-body-2 font-weight-medium mt-n2"
++          class="text-body-2 font-weight-medium mt-3"
 +          :class="statusClass"
 +        >
 +          {{ statusText }}
-+        </div>
-+        <div class="text-caption text--secondary text-center mt-1">
-+          {{ $t('app.filament_motion_monitor.label.sensed_commanded', {
-+            sensed: formatLength(sensor.sensor_motion_length),
-+            commanded: formatLength(sensor.commanded_extrusion_length)
-+          }) }}
 +        </div>
 +        <div class="text-caption text--secondary text-center">
 +          {{ $t('app.filament_motion_monitor.label.runout_remaining', {
@@ -230,8 +225,6 @@ index 0000000..e82aabf
 +  state: string
 +  active_fault: string | null
 +  flow_rate?: number
-+  sensor_motion_length?: number
-+  commanded_extrusion_length?: number
 +  runout_length?: number
 +  runout_remaining?: number
 +}

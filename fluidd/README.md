@@ -1,6 +1,6 @@
 # Fluidd dashboard component
 
-This directory contains a custom Fluidd `v1.37.6-fmm.2` build with a
+This directory contains a custom Fluidd `v1.37.6-fmm.3` build with a
 standalone **Filament Motion** dashboard card.
 
 The card:
@@ -12,7 +12,7 @@ The card:
   unavailable mark for an older backend that lacks this field;
 - uses runout remaining distance as the 300-degree arc's headroom progress,
   with configured runout length and zero endpoints in millimeters;
-- shows sensed versus commanded filament distance and runout margin;
+- shows the current runout margin; cumulative distances remain available as Klipper diagnostics;
 - enables or disables the monitor with `SET_FILAMENT_SENSOR`.
 
 The first monitor object is displayed. Sensor names are passed through Fluidd's
