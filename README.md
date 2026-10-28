@@ -14,16 +14,25 @@ symlink, the next service start restores it automatically. No tracked Klipper
 file is replaced.
 
 ```bash
-git clone https://github.com/YOUR_NAME/klipper-filament-motion-monitor.git \
+git clone https://github.com/farmercyst/klipper-filament-motion-monitor.git \
   ~/klipper-filament-motion-monitor
 cd ~/klipper-filament-motion-monitor
-./scripts/install.sh
+./install.sh
 ```
 
+The installer asks whether to install the optional custom Fluidd dashboard.
+Installing it backs up the existing Fluidd web root and disables the stock
+Fluidd updater to prevent replacement. For unattended use choose explicitly:
+`./install.sh --with-fluidd` or `./install.sh --klipper-only`.
+
 The default environment file is `~/printer_data/systemd/klipper.env`. For a
-second instance use `--env-file PATH`. A **full Klipper service restart** is
-required after first install; a G-code `RESTART` alone does not reload Python's
-startup hook.
+second instance use `--env-file PATH` (also `--web-root PATH` and
+`--moonraker-config PATH` if needed). The installer does **not** change your
+printer configuration or restart services. Configure your sensor using the
+correct pin and calibrate each printer independently. A **full Klipper service
+restart** is required after first install; a G-code `RESTART` alone does not
+reload Python's startup hook. Restart Moonraker if installing the Fluidd card,
+then hard-refresh the browser.
 
 ## Configuration
 
@@ -143,13 +152,13 @@ See [`fluidd/README.md`](fluidd/README.md) for build and upstream-update details
 
 ## Moonraker update manager
 
-After pushing this repository to GitHub, add:
+To enable updates for the plugin repository, add:
 
 ```ini
 [update_manager filament-motion-monitor]
 type: git_repo
 path: ~/klipper-filament-motion-monitor
-origin: https://github.com/YOUR_NAME/klipper-filament-motion-monitor.git
+origin: https://github.com/farmercyst/klipper-filament-motion-monitor.git
 primary_branch: main
 managed_services: klipper
 ```
